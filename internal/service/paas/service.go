@@ -426,6 +426,7 @@ func ResourceService() *schema.Resource {
 			services.MongoDB.ServiceType():       services.MongoDB.ResourceSchema(),
 			services.MySQL.ServiceType():         services.MySQL.ResourceSchema(),
 			services.PostgreSQL.ServiceType():    services.PostgreSQL.ResourceSchema(),
+			services.Prometheus.ServiceType():    services.Prometheus.ResourceSchema(),
 			services.RabbitMQ.ServiceType():      services.RabbitMQ.ResourceSchema(),
 			services.Redis.ServiceType():         services.Redis.ResourceSchema(),
 		},

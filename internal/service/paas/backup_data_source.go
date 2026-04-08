@@ -236,6 +236,14 @@ func flattenDatabaseBackups(backups []*paas.DatabaseBackup) []map[string]interfa
 
 		tfMap := map[string]interface{}{}
 
+		if v, ok := backup.Parameters["backupEnabled"].(bool); ok {
+			tfMap["backup_enabled"] = v
+		}
+
+		if v, ok := backup.Parameters["id"].(string); ok && v != "" {
+			tfMap["id"] = v
+		}
+
 		if v := backup.Location; v != nil {
 			tfMap["location"] = v
 		}

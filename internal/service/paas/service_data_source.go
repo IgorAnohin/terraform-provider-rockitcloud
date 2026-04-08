@@ -293,6 +293,7 @@ func DataSourceService() *schema.Resource {
 			services.MongoDB.ServiceType():       services.MongoDB.DataSourceSchema(),
 			services.MySQL.ServiceType():         services.MySQL.DataSourceSchema(),
 			services.PostgreSQL.ServiceType():    services.PostgreSQL.DataSourceSchema(),
+			services.Prometheus.ServiceType():    services.Prometheus.DataSourceSchema(),
 			services.RabbitMQ.ServiceType():      services.RabbitMQ.DataSourceSchema(),
 			services.Redis.ServiceType():         services.Redis.DataSourceSchema(),
 		},
