@@ -287,6 +287,7 @@ func DataSourceService() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			services.ELK.ServiceType():           services.ELK.DataSourceSchema(),
 			services.ElasticSearch.ServiceType(): services.ElasticSearch.DataSourceSchema(),
 			services.Kafka.ServiceType():         services.Kafka.DataSourceSchema(),
 			services.Memcached.ServiceType():     services.Memcached.DataSourceSchema(),

@@ -420,6 +420,7 @@ func ResourceService() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			services.ELK.ServiceType():           services.ELK.ResourceSchema(),
 			services.ElasticSearch.ServiceType(): services.ElasticSearch.ResourceSchema(),
 			services.Kafka.ServiceType():         services.Kafka.ResourceSchema(),
 			services.Memcached.ServiceType():     services.Memcached.ResourceSchema(),
@@ -510,7 +511,11 @@ func resourceServiceCreate(ctx context.Context, d *schema.ResourceData, meta int
 		input.UserDataContentType = aws.String(d.Get("user_data_content_type").(string))
 	}
 
-	log.Printf("[DEBUG] Creating PaaS Service: %s", input)
+	if manager.ServiceType() == services.ServiceTypeELK {
+		log.Printf("[DEBUG] Creating PaaS ELK Service %q", name)
+	} else {
+		log.Printf("[DEBUG] Creating PaaS Service: %s", input)
+	}
 	output, err := conn.CreateService(input)
 
 	if err != nil {
@@ -592,6 +597,9 @@ func resourceServiceRead(ctx context.Context, d *schema.ResourceData, meta inter
 		service.Users,
 		service.Databases,
 	)
+	if serviceType == services.ServiceTypeELK {
+		preserveELKPassword(d, parametersMap)
+	}
 	parametersMap["class"] = service.ServiceClass
 	d.Set(serviceType, []map[string]interface{}{parametersMap})
 
@@ -633,6 +641,16 @@ func resourceServiceRead(ctx context.Context, d *schema.ResourceData, meta inter
 	d.Set("vpc_id", service.VpcId)
 
 	return nil
+}
+
+func preserveELKPassword(d *schema.ResourceData, parametersMap map[string]interface{}) {
+	if password, ok := parametersMap["password"].(string); ok && password != "" {
+		return
+	}
+
+	if password, ok := d.GetOk(services.ServiceTypeELK + ".0.password"); ok {
+		parametersMap["password"] = password
+	}
 }
 
 func resourceServiceUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -735,7 +753,11 @@ func resourceServiceUpdate(ctx context.Context, d *schema.ResourceData, meta int
 		parametersMap := d.Get(serviceType).([]interface{})[0].(map[string]interface{})
 		input.Parameters = manager.ExpandServiceParameters(parametersMap)
 
-		log.Printf("[DEBUG] Modifying PaaS Service parameters: %s", input)
+		if serviceType == services.ServiceTypeELK {
+			log.Printf("[DEBUG] Modifying PaaS ELK Service (%s) parameters", id)
+		} else {
+			log.Printf("[DEBUG] Modifying PaaS Service parameters: %s", input)
+		}
 		_, err := conn.ModifyServiceParameters(input)
 
 		if err != nil {
