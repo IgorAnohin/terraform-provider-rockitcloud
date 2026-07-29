@@ -14,7 +14,7 @@ configuration in Terraform.
 - Map the ELK service to PaaS `serviceType = "elk"` and
   `serviceClass = "logging"`.
 - Support the documented ELK parameters: version, password, anonymous access,
-  anonymous roles, monitoring, monitoring labels, and additional options.
+  anonymous role, monitoring, monitoring labels, and additional options.
 - Add `aws_paas_logstash_pipeline` with create, read, update, delete, drift
   handling, and import support.
 - Add unit regression tests, provider documentation, and a reproducible manual QA

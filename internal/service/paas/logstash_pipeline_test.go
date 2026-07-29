@@ -66,6 +66,7 @@ func TestResourceLogstashPipelineValidation(t *testing.T) {
 		{field: "name", value: "", valid: false},
 		{field: "name", value: "beats-to-elasticsearch", valid: false},
 		{field: "configuration", value: "input { stdin {} }", valid: true},
+		{field: "configuration", value: "input {\n  stdin {}\n}", valid: true},
 		{field: "configuration", value: "", valid: false},
 	} {
 		testCase := testCase
@@ -224,6 +225,79 @@ func TestResourceLogstashPipelineReadRejectsReservedPipeline(t *testing.T) {
 	}
 	if !strings.Contains(diagnostics[0].Summary, "reserved name") {
 		t.Fatalf("unexpected diagnostic: %s", diagnostics[0].Summary)
+	}
+}
+
+func TestResourceLogstashPipelineDeleteRejectsReservedPipeline(t *testing.T) {
+	t.Parallel()
+
+	resourceData := schema.TestResourceDataRaw(t, ResourceLogstashPipeline().Schema, map[string]interface{}{
+		"service_id":    "fm-cluster-12345678",
+		"name":          reservedLogstashPipelineName,
+		"configuration": "input { beats { port => 5044 } }",
+	})
+	resourceData.SetId("logstash-pipeline-system")
+
+	diagnostics := resourceLogstashPipelineDelete(
+		context.Background(),
+		resourceData,
+		&conns.AWSClient{},
+	)
+	if !diagnostics.HasError() {
+		t.Fatal("expected reserved pipeline delete to fail")
+	}
+	if !strings.Contains(diagnostics[0].Summary, "cannot be deleted") {
+		t.Fatalf("unexpected diagnostic: %s", diagnostics[0].Summary)
+	}
+}
+
+func TestResourceLogstashPipelineDeleteIgnoresAPI404(t *testing.T) {
+	t.Parallel()
+
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodDelete {
+				t.Errorf("unexpected method: got %s want DELETE", request.Method)
+			}
+			if request.URL.Path != "/services/fm-cluster-12345678/logstash-pipelines/logstash-pipeline-missing" {
+				t.Errorf("unexpected path: %s", request.URL.Path)
+			}
+
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Status:     "404 Not Found",
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{
+					"code": "PipelineNotFound",
+					"message": "pipeline not found"
+				}`)),
+				Request: request,
+			}, nil
+		}),
+	}
+
+	conn := sdkpaas.New(session.Must(session.NewSession(&aws.Config{
+		Credentials: credentials.NewStaticCredentials("access-key", "secret-key", ""),
+		Endpoint:    aws.String("http://paas.test"),
+		HTTPClient:  httpClient,
+		Region:      aws.String("ru-msk"),
+	})))
+	resourceData := schema.TestResourceDataRaw(t, ResourceLogstashPipeline().Schema, map[string]interface{}{
+		"service_id":    "fm-cluster-12345678",
+		"name":          "missing",
+		"configuration": "input { stdin {} }",
+	})
+	resourceData.SetId("logstash-pipeline-missing")
+
+	diagnostics := resourceLogstashPipelineDelete(
+		context.Background(),
+		resourceData,
+		testPaaSClientMeta(conn),
+	)
+	if diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics: %#v", diagnostics)
 	}
 }
 

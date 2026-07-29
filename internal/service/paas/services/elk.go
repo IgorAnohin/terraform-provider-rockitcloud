@@ -38,10 +38,11 @@ func (s elkManager) serviceParametersSchema() map[string]*schema.Schema {
 			ValidateFunc: nullable.ValidateTypeStringNullableBool,
 		},
 		"anonymous_role": {
-			Type:     schema.TypeSet,
+			Type:     schema.TypeList,
 			Optional: true,
 			ForceNew: true,
 			Computed: true,
+			MaxItems: 1,
 			Elem: &schema.Schema{
 				Type:         schema.TypeString,
 				ValidateFunc: validation.StringInSlice([]string{"viewer", "editor"}, false),
@@ -50,6 +51,7 @@ func (s elkManager) serviceParametersSchema() map[string]*schema.Schema {
 		"options": {
 			Type:     schema.TypeMap,
 			Optional: true,
+			ForceNew: true,
 			Elem:     &schema.Schema{Type: schema.TypeString},
 		},
 		"password": {
@@ -78,7 +80,7 @@ func (s elkManager) serviceParametersDataSourceSchema() map[string]*schema.Schem
 			Optional: true,
 		},
 		"anonymous_role": {
-			Type:     schema.TypeSet,
+			Type:     schema.TypeList,
 			Computed: true,
 			Elem:     &schema.Schema{Type: schema.TypeString},
 		},
@@ -112,8 +114,8 @@ func (s elkManager) expandServiceParameters(tfMap map[string]interface{}) Servic
 		}
 	}
 
-	if v, ok := tfMap["anonymous_role"].(*schema.Set); ok && v.Len() > 0 {
-		serviceParameters["anonymous_role"] = v.List()
+	if v, ok := tfMap["anonymous_role"].([]interface{}); ok && len(v) > 0 {
+		serviceParameters["anonymous_role"] = v[0]
 	}
 
 	if v, ok := tfMap["options"].(map[string]interface{}); ok && len(v) > 0 {

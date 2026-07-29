@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/request"
 	sdkpaas "github.com/aws/aws-sdk-go/service/paas"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -82,7 +83,11 @@ func resourceLogstashPipelineCreate(ctx context.Context, d *schema.ResourceData,
 		aws.StringValue(input.Name),
 		serviceID,
 	)
-	output, err := conn.CreateLogstashPipelineWithContext(ctx, input)
+	output, err := conn.CreateLogstashPipelineWithContext(
+		ctx,
+		input,
+		request.WithLogLevel(aws.LogOff),
+	)
 	if err != nil {
 		return diag.Errorf("error creating PaaS Logstash Pipeline for ELK service (%s): %s", serviceID, err)
 	}
@@ -156,7 +161,11 @@ func resourceLogstashPipelineUpdate(ctx context.Context, d *schema.ResourceData,
 			d.Id(),
 			serviceID,
 		)
-		if _, err := conn.ModifyLogstashPipelineWithContext(ctx, input); err != nil {
+		if _, err := conn.ModifyLogstashPipelineWithContext(
+			ctx,
+			input,
+			request.WithLogLevel(aws.LogOff),
+		); err != nil {
 			return diag.Errorf("error modifying PaaS Logstash Pipeline (%s): %s", d.Id(), err)
 		}
 
@@ -195,7 +204,11 @@ func resourceLogstashPipelineDelete(ctx context.Context, d *schema.ResourceData,
 		d.Id(),
 		serviceID,
 	)
-	_, err := conn.DeleteLogstashPipelineWithContext(ctx, input)
+	_, err := conn.DeleteLogstashPipelineWithContext(
+		ctx,
+		input,
+		request.WithLogLevel(aws.LogOff),
+	)
 	if isLogstashPipelineNotFoundError(err) {
 		return nil
 	}
@@ -258,7 +271,11 @@ func FindLogstashPipelineByID(
 		ServiceId: aws.String(serviceID),
 	}
 
-	output, err := conn.ListLogstashPipelinesWithContext(ctx, input)
+	output, err := conn.ListLogstashPipelinesWithContext(
+		ctx,
+		input,
+		request.WithLogLevel(aws.LogOff),
+	)
 	if isLogstashPipelineNotFoundError(err) {
 		return nil, &resource.NotFoundError{
 			LastError:   err,

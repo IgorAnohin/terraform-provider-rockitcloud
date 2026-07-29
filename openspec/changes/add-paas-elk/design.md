@@ -17,6 +17,14 @@ The pinned K2 Cloud AWS SDK already exposes:
 The API has no operation to describe one pipeline, so refresh must list all
 pipelines for an ELK service and select the exact pipeline ID.
 
+The implementation was also checked against `C2Devel/botocore` `master` at
+commit `3030cb72079bdc2e57a11796732cb46d9a6c9068`. The four Logstash operations,
+their HTTP methods and paths, required request members, and response shapes are
+identical to the model bundled with the pinned ROCKIT21 SDK. The generic
+`parameters` member of the service operations remains untyped in both models,
+so ELK-specific parameter validation continues to follow the published K2 Cloud
+contract and live API behavior.
+
 ## Goals
 
 - Reuse the current PaaS service manager architecture.
@@ -47,13 +55,15 @@ ELK does not expose `kibana`: Kibana is an integral ELK component in K2 Cloud.
 ELK also does not expose the common `logging` block because it is the logging
 destination rather than a service that forwards logs.
 
-### Anonymous roles are represented as a set
+### Anonymous role adapts to the live scalar contract
 
-The public ELK API documentation defines `anonymousRole` as an array of strings.
-Terraform therefore exposes `anonymous_role` as a set restricted to `viewer` and
-`editor`. A set prevents order-only diffs. Live QA must verify the actual
-CreateService and DescribeService payloads because the cloud UI presents the
-setting as a single conceptual role.
+The public ELK API documentation defines `anonymousRole` as an array of strings,
+but the live API rejects both one-element and multi-element arrays and accepts a
+single `viewer` or `editor` string. Terraform models `anonymous_role` as a list
+matching the published configuration shape, restricts it to one item,
+and sends that item as a scalar. Refresh tolerates either a scalar or an array so
+the provider remains compatible if the API response is aligned with the
+documentation later.
 
 ### Versions are delegated to the API
 
@@ -89,18 +99,37 @@ After create, update, and delete, the resource uses the existing PaaS service
 waiter. If the API keeps the parent in `READY`, the waiter completes immediately;
 if it transitions through `UPDATING`, Terraform waits for a stable result.
 
+### Only monitoring parameters are editable
+
+The published ELK contract marks only `monitoring`, `monitorBy`, and
+`monitoringLabels` as editable. ModifyServiceParameters therefore receives only
+those three expanded fields. Create-only `version`, `password`,
+`allowAnonymous`, `anonymousRole`, and `options` are never repeated in an update
+request.
+
+`options` is replacement-only in Terraform. The live DescribeService response
+can omit both `options` and `password` after accepting them during create, so an
+existing resource preserves those values from its prior state. A data source or
+fresh import cannot reconstruct values that the API does not return.
+
 ## Risks and Mitigations
 
-- The API documentation and UI may disagree about the shape of
-  `anonymousRole`. Unit tests lock the documented array contract; live QA records
-  the actual payload before release.
-- DescribeService may omit the ELK password. Refresh preserves an existing
-  sensitive state value when the API response does not contain one, preventing a
-  false replacement diff.
+- The public documentation and live API disagree about `anonymousRole`. Focused
+  tests lock the one-item Terraform schema, scalar request adapter, and tolerant
+  response conversion. Manual QA records the live scalar value.
+- DescribeService can omit ELK `password` and `options`. Refresh preserves
+  existing resource-state values, preventing false replacement diffs. A fresh
+  import cannot recover either omitted create input; configurations that set
+  them must retain the original state or explicitly accept replacement.
 - Logstash configuration syntax is validated by the service, not duplicated in
   the provider. It is marked sensitive and excluded from provider debug logs.
-  Manual QA covers a valid create and update and an invalid configuration
-  response.
-- Existing cloud E2E tests are not usable. Focused unit tests and the committed
-  manual QA procedure provide deterministic coverage until live credentials are
-  supplied.
+  Although the published examples use multiline configuration, the live API
+  currently rejects literal newlines with `control characters are not allowed`.
+  The working example is one line, and manual QA records the multiline response
+  as a cloud defect without adding an undocumented provider-side restriction.
+- The live API rejects `c5.large` for ELK because it has only 4 GiB of memory.
+  The example uses the verified `m5.large` flavor. Instance capabilities remain
+  API-owned and are not hard-coded in provider validation.
+- The repository-wide cloud E2E suite is not usable. Focused unit tests and the
+  committed ELK-only QA procedure provide deterministic and live coverage
+  without expanding this change into repairs of unrelated acceptance tests.

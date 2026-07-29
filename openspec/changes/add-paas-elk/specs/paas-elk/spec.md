@@ -24,13 +24,17 @@ The provider SHALL allow an ELK service to be declared with an `elk` block in
 - **WHEN** `data.aws_paas_service` reads the service
 - **THEN** the provider SHALL populate the `elk` block and common service
   attributes
+- **AND** it SHALL NOT invent `password` or `options` when the API omits them
 
 #### Scenario: Import an ELK service
 
 - **GIVEN** an ELK service created outside the current Terraform state
 - **WHEN** it is imported by service ID
 - **THEN** refresh SHALL select the ELK manager from the API service type
-- **AND** a matching configuration SHALL produce no changes
+- **AND** a matching configuration containing only API-readable values SHALL
+  produce no changes
+- **AND** API-elided `password` and `options` SHALL NOT be inferred or silently
+  suppressed
 
 ### Requirement: ELK topology constraints
 
@@ -79,21 +83,31 @@ published ELK API contract.
   sign, single quote, double quote, backtick, or backslash
 - **THEN** Terraform schema validation SHALL reject it
 
-#### Scenario: Preserve a write-only ELK password
+#### Scenario: Preserve API-elided ELK create inputs
 
-- **GIVEN** an existing ELK service whose state contains a configured password
-- **WHEN** the PaaS read response omits that password
-- **THEN** refresh SHALL preserve the prior sensitive state value
-- **AND** the omission SHALL NOT cause a replacement-only password diff
+- **GIVEN** an existing ELK service whose state contains configured `password`
+  or `options`
+- **WHEN** the PaaS read response omits either value
+- **THEN** refresh SHALL preserve the prior resource-state value
+- **AND** the omission SHALL NOT cause a false replacement diff
 - **AND** provider debug logs SHALL NOT include ELK service parameters
 
 #### Scenario: Configure anonymous access
 
 - **GIVEN** anonymous access is enabled
-- **WHEN** the user assigns one or more roles
-- **THEN** every role SHALL be either `viewer` or `editor`
-- **AND** the provider SHALL send the roles as an array
-- **AND** role ordering returned by the API SHALL not create a diff
+- **WHEN** the user assigns an anonymous role
+- **THEN** the role SHALL be either `viewer` or `editor`
+- **AND** Terraform SHALL reject more than one configured role
+- **AND** the provider SHALL send the one role as a scalar value
+- **AND** refresh SHALL accept either the live scalar or a documented array
+  response
+
+#### Scenario: Configure additional ELK options
+
+- **WHEN** the user configures `options`
+- **THEN** the provider SHALL pass them during service creation
+- **AND** changing `options` SHALL require service replacement
+- **AND** an API omission SHALL NOT erase them from existing resource state
 
 #### Scenario: Update monitoring
 
@@ -102,6 +116,8 @@ published ELK API contract.
 - **WHEN** the user adds, changes, or removes the ELK `monitoring` block
 - **THEN** the provider SHALL pass monitoring, monitor target, and labels through
   the existing service-parameter update lifecycle
+- **AND** the ModifyServiceParameters request SHALL contain no ELK create-only
+  parameters
 
 #### Scenario: Reject unrelated service fields
 
@@ -134,6 +150,15 @@ The provider SHALL manage ELK Logstash pipelines with
 - **WHEN** only `configuration` changes
 - **THEN** the provider SHALL update the pipeline in place
 - **AND** preserve its name and state ID
+
+#### Scenario: PaaS rejects a multiline pipeline configuration
+
+- **GIVEN** an existing managed pipeline
+- **WHEN** the live PaaS API rejects literal newline characters
+- **THEN** the provider SHALL return the PaaS error without replacing the
+  pipeline or clearing its state
+- **AND** the provider SHALL NOT add an undocumented schema restriction that
+  rejects otherwise non-empty multiline configuration
 
 #### Scenario: Protect pipeline configuration
 

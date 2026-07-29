@@ -33,4 +33,3 @@ output "pipeline_id" {
 output "pipeline_name" {
   value = aws_paas_logstash_pipeline.qa.name
 }
-

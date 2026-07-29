@@ -45,6 +45,7 @@ In addition to all arguments above, the following attributes are exported:
 * `instance_type` - The instance type.
 * `name` - The service name.
 * `network_interface_ids` - List of network interface IDs.
+* `nodes` - The service node topology. The structure of this block is [described below](#nodes).
 * `root_volume` - The root volume parameters for the service. The structure of this block is [described below](#root_volume).
 * `security_group_ids` - List of security group IDs that were specified for the service.
 * `service_class` - The service class.
@@ -113,6 +114,15 @@ The `endpoints` block has the following structure:
 * `address` - The address of the endpoint.
 * `name` - The name of the endpoint.
 
+### nodes
+
+The `nodes` block has the following structure:
+
+* `coordinator` - The coordinator node parameters.
+    * `role` - The coordinator node role.
+* `main` - The main node parameters.
+    * `role` - The main node role.
+
 ### root_volume
 
 The `root_volume` block has the following structure:
@@ -146,12 +156,16 @@ In addition to the common attributes for all services [described above](#attribu
 the following attributes are exported only for an ELK service:
 
 * `allow_anonymous` - Indicates whether anonymous access to Kibana is enabled.
-* `anonymous_role` - Set of roles for anonymous access.
+* `anonymous_role` - List containing zero or one role for anonymous access.
 * `class` - The service class (`logging`).
 * `monitoring` - The monitoring settings for the service. The structure of this block is [described below](#monitoring).
-* `options` - Other ELK parameters.
+* `options` - Other ELK parameters when they are returned by the API.
 * `password` - The Elasticsearch user password when it is returned by the API. This attribute is sensitive.
 * `version` - The installed version.
+
+~> **Note** The live DescribeService API can omit `password` and `options`.
+Unlike an existing resource state, a data source cannot reconstruct create
+inputs that the API does not return.
 
 ## Memcached Attribute Reference
 

@@ -14,17 +14,9 @@ Manages a Logstash data pipeline that belongs to a K2 Cloud PaaS ELK service.
 
 ```terraform
 resource "aws_paas_logstash_pipeline" "events" {
-  service_id = aws_paas_service.elk.id
-  name       = "application-events"
-
-  configuration = <<-LOGSTASH
-    input {
-      http {
-        port => 4567
-        tags => events
-      }
-    }
-  LOGSTASH
+  service_id    = aws_paas_service.elk.id
+  name          = "application-events"
+  configuration = "input { http { port => 4567 tags => [\"events\"] } }"
 }
 ```
 
@@ -38,6 +30,11 @@ The following arguments are supported:
 * `configuration` - (Required, Sensitive) The Logstash pipeline configuration. Changes are applied in place.
   Syntax validation is performed by the PaaS API. Terraform state still contains
   the value, so state storage must be protected.
+
+~> **Note** The live PaaS API currently rejects literal newline and other
+control characters even though its published examples are multiline. Use a
+one-line configuration until the cloud behavior is corrected. The provider
+continues to delegate Logstash syntax validation to PaaS.
 
 ## Attribute Reference
 

@@ -73,8 +73,11 @@ func TestELKResourceSchema(t *testing.T) {
 		}
 	}
 
-	if got := nested["anonymous_role"].Type; got != schema.TypeSet {
-		t.Fatalf("anonymous_role must model the API array as a set, got %s", got)
+	if got := nested["anonymous_role"].Type; got != schema.TypeList {
+		t.Fatalf("anonymous_role must use a one-item list, got %s", got)
+	}
+	if got := nested["anonymous_role"].MaxItems; got != 1 {
+		t.Fatalf("anonymous_role must allow at most one live-API value, got %d", got)
 	}
 	if !nested["version"].Required || !nested["version"].ForceNew {
 		t.Fatal("version must be required and ForceNew")
@@ -84,6 +87,9 @@ func TestELKResourceSchema(t *testing.T) {
 	}
 	if !nested["allow_anonymous"].ForceNew || !nested["anonymous_role"].ForceNew {
 		t.Fatal("anonymous access settings must be ForceNew")
+	}
+	if !nested["options"].ForceNew {
+		t.Fatal("options must be ForceNew because the ELK API documents it only for create")
 	}
 }
 
@@ -139,6 +145,26 @@ func TestELKPasswordValidation(t *testing.T) {
 	}
 }
 
+func TestELKAnonymousRoleValidation(t *testing.T) {
+	t.Parallel()
+
+	validate := ELK.serviceParametersSchema()["anonymous_role"].Elem.(*schema.Schema).ValidateFunc
+
+	for _, value := range []string{"viewer", "editor"} {
+		_, errors := validate(value, "anonymous_role")
+		if len(errors) != 0 {
+			t.Errorf("expected anonymous role %q to be accepted, got %v", value, errors)
+		}
+	}
+
+	for _, value := range []string{"", "admin", "Viewer"} {
+		_, errors := validate(value, "anonymous_role")
+		if len(errors) == 0 {
+			t.Errorf("expected anonymous role %q to be rejected", value)
+		}
+	}
+}
+
 func TestELKExpandServiceParameters(t *testing.T) {
 	t.Parallel()
 
@@ -149,7 +175,7 @@ func TestELKExpandServiceParameters(t *testing.T) {
 		ServiceTypeELK: []interface{}{
 			map[string]interface{}{
 				"allow_anonymous": "true",
-				"anonymous_role":  []interface{}{"editor", "viewer"},
+				"anonymous_role":  []interface{}{"viewer"},
 				"class":           ServiceClassLogging,
 				"monitoring": []interface{}{
 					map[string]interface{}{
@@ -181,12 +207,8 @@ func TestELKExpandServiceParameters(t *testing.T) {
 		t.Fatalf("unexpected access or version parameters: %#v", got)
 	}
 
-	roles, ok := got["anonymous_role"].([]interface{})
-	if !ok {
-		t.Fatalf("anonymous_role must expand as an array, got %#v", got["anonymous_role"])
-	}
-	if !reflect.DeepEqual(roles, []interface{}{"editor", "viewer"}) {
-		t.Fatalf("unexpected anonymous roles: %#v", roles)
+	if got["anonymous_role"] != "viewer" {
+		t.Fatalf("anonymous_role must expand as a live-API scalar, got %#v", got["anonymous_role"])
 	}
 
 	labels, ok := got["monitoring_labels"].(map[string]interface{})

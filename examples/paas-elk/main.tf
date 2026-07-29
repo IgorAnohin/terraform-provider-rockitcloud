@@ -52,6 +52,6 @@ resource "aws_paas_logstash_pipeline" "wrong_service" {
   count = var.wrong_service_id == null ? 0 : 1
 
   service_id    = var.wrong_service_id
-  name          = "terraform-qa-invalid-target"
+  name          = "${var.pipeline_name}-invalid-target"
   configuration = "input { stdin {} }"
 }

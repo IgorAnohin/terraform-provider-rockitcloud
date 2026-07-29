@@ -9,6 +9,11 @@
 - [x] Run the focused tests before implementation. The expected red result was
   recorded on 2026-07-28: the new tests failed to compile because the ELK manager,
   constants, and Logstash resource did not yet exist.
+- [x] Add tests first for live regressions discovered on 2026-07-29: data-source
+  `nodes`, scalar anonymous role with one-item limit, ELK update-field
+  filtering, API-elided password/options preservation, and SDK HTTP-body secret
+  suppression. Each new contract was observed failing before its implementation
+  fix.
 
 ## 2. ELK service implementation
 
@@ -39,5 +44,18 @@
 
 ## 6. Credentialed cloud validation
 
-- [ ] Execute every scenario in `examples/paas-elk/MANUAL_QA.md` after dedicated
-  K2 Cloud credentials and QA infrastructure IDs are supplied.
+- [x] Run ELK and Logstash pipeline create/read/update/import/drift/delete
+  acceptance with strict error handling.
+- [x] Verify the live scalar anonymous-role adapter and one-role schema.
+- [x] Verify HA/arbitrator topology through raw DescribeService and instance
+  roles.
+- [x] Verify options create, API omission, resource-state preservation, and
+  replacement-only lifecycle.
+- [x] Verify monitoring labels change and monitoring removal in place with an
+  unchanged service ID.
+- [x] Record live API discrepancies for minimum memory, anonymousRole,
+  multiline Logstash configuration, and API-elided create inputs.
+- [x] Independently confirm cleanup after every run: zero ELK services, original
+  VPC count, and existing Prometheus still READY.
+- [ ] Manual QA owner: execute the private-network HTTP event and Kibana UI
+  checks documented in `examples/paas-elk/MANUAL_QA.md` before release.

@@ -12,8 +12,8 @@ variable "service_name" {
 
 variable "instance_type" {
   type        = string
-  description = "Instance type for ELK nodes."
-  default     = "c5.large"
+  description = "Instance type for ELK nodes. m5.large is the verified minimum for this fixture."
+  default     = "m5.large"
 }
 
 variable "subnet_ids" {
@@ -73,21 +73,14 @@ variable "allow_anonymous" {
 }
 
 variable "anonymous_roles" {
-  type        = set(string)
-  description = "Roles assigned to anonymous Kibana users."
+  type        = list(string)
+  description = "List containing zero or one anonymous Kibana role."
   default     = ["viewer"]
-
-  validation {
-    condition = alltrue([
-      for role in var.anonymous_roles : contains(["viewer", "editor"], role)
-    ])
-    error_message = "Anonymous roles must be viewer or editor."
-  }
 }
 
 variable "elk_options" {
   type        = map(string)
-  description = "Additional ELK parameters."
+  description = "Create-only ELK parameters. Changes replace the service, and DescribeService can omit them."
   default     = {}
 }
 
@@ -114,16 +107,9 @@ variable "pipeline_name" {
 
 variable "pipeline_configuration" {
   type        = string
-  description = "Logstash pipeline configuration."
+  description = "One-line Logstash pipeline configuration used as a workaround for the live API control-character rejection."
   sensitive   = true
-  default     = <<-LOGSTASH
-    input {
-      http {
-        port => 4567
-        tags => ["terraform", "qa", "first"]
-      }
-    }
-  LOGSTASH
+  default     = "input { http { port => 4567 tags => [\"terraform\", \"qa\", \"first\"] } }"
 }
 
 variable "wrong_service_id" {

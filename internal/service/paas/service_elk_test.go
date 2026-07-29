@@ -2,6 +2,7 @@ package paas
 
 import (
 	"context"
+	"net/http"
 	"reflect"
 	"testing"
 
@@ -65,6 +66,14 @@ func TestDataSourceServiceELKIntegration(t *testing.T) {
 		t.Fatal("ELK data source block must be computed")
 	}
 
+	nodesSchema, ok := dataSource.Schema["nodes"]
+	if !ok || nodesSchema == nil {
+		t.Fatal("ELK data source must expose nodes used by the shared service read")
+	}
+	if !nodesSchema.Computed {
+		t.Fatal("ELK data source nodes must be computed")
+	}
+
 	nested := elkSchema.Elem.(*schema.Resource).Schema
 	for _, name := range []string{
 		"allow_anonymous",
@@ -78,6 +87,65 @@ func TestDataSourceServiceELKIntegration(t *testing.T) {
 		if _, ok := nested[name]; !ok {
 			t.Errorf("expected %q in ELK data source schema", name)
 		}
+	}
+}
+
+func TestDataSourceServiceELKReadWithNodes(t *testing.T) {
+	t.Parallel()
+
+	conn := testPaaSClientWithDebugBodyLogging(
+		&recordingSDKLogger{},
+		roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodGet ||
+				request.URL.Path != "/services/fm-cluster-12345678" {
+				t.Fatalf("unexpected PaaS request: %s %s", request.Method, request.URL.Path)
+			}
+
+			return jsonResponse(request, `{
+				"service": {
+					"id": "fm-cluster-12345678",
+					"name": "tf-elk-test",
+					"serviceType": "elk",
+					"serviceClass": "logging",
+					"status": "READY",
+					"instanceType": "m5.large",
+					"rootVolumeType": "gp2",
+					"rootVolumeSize": 32,
+					"dataVolumeType": "gp2",
+					"dataVolumeSize": 32,
+					"nodes": {
+						"main": {
+							"role": "node"
+						}
+					},
+					"parameters": {
+						"version": "8.17"
+					}
+				}
+			}`), nil
+		}),
+	)
+	dataSource := DataSourceService()
+	resourceData := schema.TestResourceDataRaw(t, dataSource.Schema, map[string]interface{}{
+		"id": "fm-cluster-12345678",
+	})
+
+	diagnostics := dataSourceServiceRead(
+		context.Background(),
+		resourceData,
+		testPaaSClientMeta(conn),
+	)
+	if diagnostics.HasError() {
+		t.Fatalf("reading ELK data source: %#v", diagnostics)
+	}
+	if got := resourceData.Get("nodes.0.main.0.role"); got != "node" {
+		t.Fatalf("unexpected ELK main node role: got %#v want %q", got, "node")
+	}
+	if got := resourceData.Get("elk.0.version"); got != "8.17" {
+		t.Fatalf("unexpected ELK version: got %#v want %q", got, "8.17")
+	}
+	if got := resourceData.Get("service_type"); got != "elk" {
+		t.Fatalf("unexpected service type: got %#v want %q", got, "elk")
 	}
 }
 
@@ -99,13 +167,16 @@ func TestExistingPaaSManagersRemainRegisteredWithELK(t *testing.T) {
 	}
 }
 
-func TestPreserveELKPasswordWhenAPIElidesIt(t *testing.T) {
+func TestPreserveELKInputOnlyParametersWhenAPIElidesThem(t *testing.T) {
 	t.Parallel()
 
 	resourceData := schema.TestResourceDataRaw(t, ResourceService().Schema, map[string]interface{}{
 		services.ServiceTypeELK: []interface{}{
 			map[string]interface{}{
-				"class":    services.ServiceClassLogging,
+				"class": services.ServiceClassLogging,
+				"options": map[string]interface{}{
+					"node.attr.qa": "terraform",
+				},
 				"password": "abcdefgh",
 				"version":  "8.17",
 			},
@@ -114,95 +185,185 @@ func TestPreserveELKPasswordWhenAPIElidesIt(t *testing.T) {
 
 	for _, parametersMap := range []map[string]interface{}{
 		{"version": "8.17"},
-		{"password": "", "version": "8.17"},
+		{
+			"options":  map[string]interface{}{},
+			"password": "",
+			"version":  "8.17",
+		},
 	} {
-		preserveELKPassword(resourceData, parametersMap)
+		preserveELKInputOnlyParameters(resourceData, parametersMap)
 		if err := resourceData.Set(services.ServiceTypeELK, []map[string]interface{}{parametersMap}); err != nil {
 			t.Fatalf("setting refreshed ELK parameters: %s", err)
 		}
 		if got := resourceData.Get(services.ServiceTypeELK + ".0.password"); got != "abcdefgh" {
 			t.Fatalf("password was not preserved after refresh: got %#v", got)
 		}
+		options, ok := resourceData.Get(services.ServiceTypeELK + ".0.options").(map[string]interface{})
+		if !ok || options["node.attr.qa"] != "terraform" {
+			t.Fatalf("options were not preserved after refresh: got %#v", options)
+		}
 	}
 }
 
-func TestPreserveELKPasswordUsesAPIValue(t *testing.T) {
+func TestPreserveELKInputOnlyParametersUseAPIValues(t *testing.T) {
 	t.Parallel()
 
 	resourceData := schema.TestResourceDataRaw(t, ResourceService().Schema, map[string]interface{}{
 		services.ServiceTypeELK: []interface{}{
 			map[string]interface{}{
-				"class":    services.ServiceClassLogging,
+				"class": services.ServiceClassLogging,
+				"options": map[string]interface{}{
+					"node.attr.qa": "terraform",
+				},
 				"password": "abcdefgh",
 				"version":  "8.17",
 			},
 		},
 	})
 	parametersMap := map[string]interface{}{
+		"options": map[string]interface{}{
+			"node.attr.qa": "api",
+		},
 		"password": "ijklmnop",
 		"version":  "8.17",
 	}
 
-	preserveELKPassword(resourceData, parametersMap)
+	preserveELKInputOnlyParameters(resourceData, parametersMap)
 	if err := resourceData.Set(services.ServiceTypeELK, []map[string]interface{}{parametersMap}); err != nil {
 		t.Fatalf("setting refreshed ELK parameters: %s", err)
 	}
 	if got := resourceData.Get(services.ServiceTypeELK + ".0.password"); got != "ijklmnop" {
 		t.Fatalf("API password must win during refresh: got %#v", got)
 	}
+	options, ok := resourceData.Get(services.ServiceTypeELK + ".0.options").(map[string]interface{})
+	if !ok || options["node.attr.qa"] != "api" {
+		t.Fatalf("API options must win during refresh: got %#v", options)
+	}
 }
 
-func TestResourceServiceELKEditableParametersDoNotRequireReplacement(t *testing.T) {
+func TestResourceServiceELKMonitoringDoesNotRequireReplacement(t *testing.T) {
 	t.Parallel()
 
 	resource := ResourceService()
 	initialConfig := testELKServiceConfig(map[string]interface{}{
 		"version": "8.17",
-		"options": map[string]interface{}{
-			"node.attr.qa": "first",
-		},
 	})
 	resourceData := schema.TestResourceDataRaw(t, resource.Schema, initialConfig)
 	resourceData.SetId("fm-cluster-12345678")
 	state := resourceData.State()
 
-	for name, elkParameters := range map[string]map[string]interface{}{
-		"options": {
+	diff, err := resource.Diff(
+		context.Background(),
+		state,
+		terraform.NewResourceConfigRaw(testELKServiceConfig(map[string]interface{}{
 			"version": "8.17",
-			"options": map[string]interface{}{
-				"node.attr.qa": "second",
-			},
-		},
-		"monitoring": {
-			"version": "8.17",
-			"options": map[string]interface{}{
-				"node.attr.qa": "first",
-			},
 			"monitoring": []interface{}{
 				map[string]interface{}{
 					"monitor_by": "fm-cluster-monitor",
 				},
 			},
+		})),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("calculating ELK diff: %s", err)
+	}
+	if diff == nil || diff.Empty() {
+		t.Fatal("monitoring update unexpectedly produced an empty diff")
+	}
+	if diff.RequiresNew() {
+		t.Fatalf("monitoring update unexpectedly requires ELK replacement: %#v", diff.Attributes)
+	}
+}
+
+func TestResourceServiceELKOptionsRequireReplacement(t *testing.T) {
+	t.Parallel()
+
+	resource := ResourceService()
+	resourceData := schema.TestResourceDataRaw(t, resource.Schema, testELKServiceConfig(map[string]interface{}{
+		"version": "8.17",
+		"options": map[string]interface{}{
+			"node.attr.qa": "first",
 		},
-	} {
-		name, elkParameters := name, elkParameters
-		t.Run(name, func(t *testing.T) {
-			diff, err := resource.Diff(
-				context.Background(),
-				state,
-				terraform.NewResourceConfigRaw(testELKServiceConfig(elkParameters)),
-				nil,
-			)
-			if err != nil {
-				t.Fatalf("calculating ELK diff: %s", err)
-			}
-			if diff == nil || diff.Empty() {
-				t.Fatalf("%s update unexpectedly produced an empty diff", name)
-			}
-			if diff.RequiresNew() {
-				t.Fatalf("%s update unexpectedly requires ELK replacement: %#v", name, diff.Attributes)
-			}
-		})
+	}))
+	resourceData.SetId("fm-cluster-12345678")
+
+	diff, err := resource.Diff(
+		context.Background(),
+		resourceData.State(),
+		terraform.NewResourceConfigRaw(testELKServiceConfig(map[string]interface{}{
+			"version": "8.17",
+			"options": map[string]interface{}{
+				"node.attr.qa": "second",
+			},
+		})),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("calculating ELK diff: %s", err)
+	}
+	if diff == nil || diff.Empty() {
+		t.Fatal("options update unexpectedly produced an empty diff")
+	}
+	if !diff.RequiresNew() {
+		t.Fatalf("options update must require ELK replacement: %#v", diff.Attributes)
+	}
+}
+
+func TestELKServiceParametersForUpdate(t *testing.T) {
+	t.Parallel()
+
+	input := services.ServiceParameters{
+		"allow_anonymous":   true,
+		"anonymous_role":    "viewer",
+		"monitor_by":        "fm-cluster-monitor",
+		"monitoring":        true,
+		"monitoring_labels": map[string]interface{}{"environment": "acceptance"},
+		"options":           map[string]interface{}{"node.attr.qa": "first"},
+		"password":          "abcdefgh",
+		"version":           "8.17",
+	}
+	inputBefore := make(services.ServiceParameters, len(input))
+	for key, value := range input {
+		inputBefore[key] = value
+	}
+
+	got := serviceParametersForUpdate(services.ServiceTypeELK, input)
+	want := services.ServiceParameters{
+		"monitor_by":        "fm-cluster-monitor",
+		"monitoring":        true,
+		"monitoring_labels": map[string]interface{}{"environment": "acceptance"},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected ELK update parameters: got %#v want %#v", got, want)
+	}
+	if !reflect.DeepEqual(input, inputBefore) {
+		t.Fatalf("ELK update filtering mutated its input: got %#v want %#v", input, inputBefore)
+	}
+}
+
+func TestELKServiceParametersForUpdatePreservesFalseMonitoring(t *testing.T) {
+	t.Parallel()
+
+	got := serviceParametersForUpdate(services.ServiceTypeELK, services.ServiceParameters{
+		"monitoring": false,
+		"password":   "abcdefgh",
+		"version":    "8.17",
+	})
+	want := services.ServiceParameters{"monitoring": false}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected ELK update parameters: got %#v want %#v", got, want)
+	}
+}
+
+func TestServiceParametersForUpdateLeavesOtherServicesUnchanged(t *testing.T) {
+	t.Parallel()
+
+	input := services.ServiceParameters{"version": "15"}
+	if got := serviceParametersForUpdate(services.ServiceTypePostgreSQL, input); !reflect.DeepEqual(got, input) {
+		t.Fatalf("non-ELK parameters changed: got %#v want %#v", got, input)
 	}
 }
 

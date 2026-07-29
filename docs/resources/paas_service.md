@@ -101,7 +101,7 @@ resource "aws_paas_service" "elasticsearch" {
 ```terraform
 resource "aws_paas_service" "elk" {
   name          = "tf-elk-service"
-  instance_type = "c5.large"
+  instance_type = "m5.large"
 
   root_volume {
     type = "gp2"
@@ -661,16 +661,18 @@ the `elk` block can contain the following arguments:
 
 * `allow_anonymous` - (Optional) Indicates whether anonymous access to Kibana is enabled.
   When `password` is specified, the API defaults this value to `false`.
-* `anonymous_role` - (Optional) Set of roles for anonymous access.
+* `anonymous_role` - (Optional) List containing at most one role for anonymous access.
     * _Valid values:_ `viewer`, `editor`
     * _Default value:_ `viewer`
     * _Constraints:_ The parameter is applicable only if `allow_anonymous` is `true`.
+  Terraform uses the documented list-shaped configuration but sends its one
+  element as the scalar value required by the live API.
 * `class` - (Optional) The service class.
     * _Valid values:_ `logging`
     * _Default value:_ `logging`
 * `monitoring` - (Optional, Editable) The monitoring settings for the service.
   The structure of this block is [described below](#monitoring).
-* `options` - (Optional, Editable) Map containing other ELK parameters. Values are strings.
+* `options` - (Optional, Forces new resource) Map containing other ELK parameters. Values are strings.
 * `password` - (Optional) The Elasticsearch user password. The value must be 8 to 128 characters long
   and must not contain `-`, `!`, `:`, `;`, `%`, `'`, `"`, `` ` `` or `\`. If the password is
   omitted, Kibana allows anonymous access by default.
@@ -679,6 +681,11 @@ the `elk` block can contain the following arguments:
 
 ~> **Note** ELK does not expose `kibana` or `logging` arguments. Kibana is an integral component of
 the K2 Cloud ELK service, and the service is itself a logging destination.
+
+~> **Note** Of the ELK-specific parameters, only `monitoring` is updated in
+place. The live API can omit `password` and `options` from DescribeService.
+Terraform preserves them in an existing resource state, but a fresh import
+cannot recover values that the API does not return.
 
 ## Memcached Argument Reference
 
