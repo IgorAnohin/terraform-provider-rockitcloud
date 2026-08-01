@@ -1,0 +1,7 @@
+# `ssh_public_key` and a unique `paas_service_name` are intentionally supplied
+# through TF_VAR_* environment variables in README.md.
+
+region            = "ru-msk"
+availability_zone = "ru-msk-vol52"
+instance_type     = "c5.large"
+webhook_url       = "https://httpbin.org/post"
